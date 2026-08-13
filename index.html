@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Control de Rondas — Seguridad</title>
+<meta name="description" content="Registro de rondas por QR, botón de pánico y bitácora de seguridad.">
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#0B1116">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rondas">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<link rel="icon" href="./icons/icon-192.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="./firebase-config.js"></script>
+<style>
+  :root{
+    --base:#0B1116;
+    --surface:#141B22;
+    --surface2:#1B242D;
+    --line:#24303A;
+    --brand:#B02E21;
+    --brand-dim:#4A130E;
+    --panic:#FF9500;
+    --panic-dim:#7A4A00;
+    --green:#34D399;
+    --text:#EDF1F5;
+    --muted:#7C8A96;
+    --font-display:'Space Grotesk', sans-serif;
+    --font-body:'Inter', sans-serif;
+    --font-mono:'IBM Plex Mono', monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--base);
+    color:var(--text);
+    font-family:var(--font-body);
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{
+    max-width:480px;
+    margin:0 auto;
+    min-height:100vh;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.02), transparent 120px),
+      var(--base);
+    position:relative;
+    display:flex;
+    flex-direction:column;
+  }
+  /* ---------- top bar ---------- */
+  .topbar{
+    padding:18px 20px 14px;
+    border-bottom:1px solid var(--line);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    position:sticky;
+    top:0;
+    background:rgba(11,17,22,0.92);
+    backdrop-filter:blur(6px);
+    z-index:20;
+  }
+  .brand{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+  }
+  .brand-mark{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:15px;
+    letter-spacing:0.03em;
+    color:var(--text);
+    display:flex;
+    align-items:center;
+    gap:9px;
+  }
+  .brand-mark .dot{
+    width:8px;height:8px;border-radius:50%;
+    background:var(--brand);
+    box-shadow:0 0 8px var(--brand);
+    flex-shrink:0;
+  }
+  .brand-badge{
+    width:26px;height:26px;
+    border-radius:50%;
+    flex-shrink:0;
+    display:block;
+    object-fit:cover;
+  }
+  .brand-badge.alert-badge{
+    box-shadow:0 0 0 2px var(--panic), 0 0 10px rgba(255,149,0,0.6);
+  }
+  .brand-sub{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    color:var(--muted);
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+  }
+  .exit-role{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    color:var(--muted);
+    background:var(--surface2);
+    border:1px solid var(--line);
+    padding:6px 10px;
+    border-radius:7px;
+    cursor:pointer;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+  }
+  .exit-role:active{background:var(--line);}
+
+  /* ---------- generic screen ---------- */
+  .screen{
+    flex:1;
+    padding:22px 20px 100px;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+    animation:fade .25s ease;
+  }
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  h1.page-title{
+    font-family:var(--font-display);
+    font-size:22px;
+    font-weight:600;
+    margin:4px 0 0;
+    letter-spacing:-0.01em;
+  }
+  p.page-sub{
+    font-family:var(--font-body);
+    font-size:13.5px;
+    color:var(--muted);
+    margin:0 0 4px;
+    line-height:1.5;
+  }
+
+  /* ---------- role select ---------- */
+  .role-grid{display:flex;flex-direction:column;gap:12px;margin-top:8px;}
+  .hero-glyph{width:108px;height:108px;margin:14px auto 6px;filter:drop-shadow(0 6px 18px rgba(176,46,33,0.35));}
+  .hero-glyph svg{width:100%;height:100%;}
+  .role-screen{position:relative;}
+  .role-screen::before{
+    content:'';
+    position:absolute; left:-24px; right:-24px; top:-20px; height:300px;
+    background:radial-gradient(circle at 50% 0%, rgba(176,46,33,0.16), transparent 72%);
+    pointer-events:none; z-index:0;
+  }
+  .role-screen::after{
+    content:'';
+    position:absolute; inset:0;
+    background-image:radial-gradient(rgba(255,255,255,0.045) 1px, transparent 1px);
+    background-size:16px 16px;
+    -webkit-mask-image:linear-gradient(to bottom, black, transparent 78%);
+    mask-image:linear-gradient(to bottom, black, transparent 78%);
+    pointer-events:none; z-index:0;
+  }
+  .role-screen > *{position:relative; z-index:1;}
+  .role-card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:20px;
+    text-align:left;
+    cursor:pointer;
+    color:var(--text);
+    font-family:var(--font-body);
+    display:flex;
+    align-items:center;
+    gap:14px;
+    transition:border-color .15s, transform .1s;
+  }
+  .role-card:active{transform:scale(0.98);}
+  .role-card.guardia:hover{border-color:var(--brand-dim);}
+  .role-card.jefe:hover{border-color:var(--line);}
+  .role-icon{
+    width:44px;height:44px;border-radius:10px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:20px;flex-shrink:0;
+    background:var(--surface2);
+  }
+  .role-icon svg{width:21px;height:21px;}
+  .role-card.guardia .role-icon{background:rgba(176,46,33,0.14); color:var(--brand);}
+  .role-card.jefe .role-icon{color:var(--text);}
+  .panic-entry-btn{
+    margin-top:6px;
+    border-color:var(--panic-dim);
+    color:var(--panic);
+    display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .panic-entry-btn svg{width:17px;height:17px;}
+  .role-title{font-family:var(--font-display);font-weight:600;font-size:16px;}
+  .role-desc{font-size:12.5px;color:var(--muted);margin-top:2px;}
+
+  /* ---------- selects / buttons ---------- */
+  label.field-label{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.07em;
+    color:var(--muted);
+    margin-bottom:6px;
+    display:block;
+  }
+  select, input[type=text], input[type=password], input[type=datetime-local]{
+    width:100%;
+    background:var(--surface);
+    border:1px solid var(--line);
+    color:var(--text);
+    font-family:var(--font-body);
+    font-size:15px;
+    padding:14px 14px;
+    border-radius:11px;
+    appearance:none;
+    -webkit-appearance:none;
+  }
+  select:focus, input:focus{outline:2px solid var(--brand-dim); outline-offset:1px;}
+  .btn{
+    width:100%;
+    padding:15px 16px;
+    border-radius:12px;
+    border:none;
+    font-family:var(--font-body);
+    font-weight:600;
+    font-size:15px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+  }
+  .btn:active{transform:scale(0.98);}
+  .btn-primary{background:var(--brand); color:#1A1200;}
+  .btn-secondary{background:var(--surface2); color:var(--text); border:1px solid var(--line);}
+  .btn-ghost{background:transparent; color:var(--muted); border:1px dashed var(--line);}
+  .btn:disabled{opacity:0.4; cursor:not-allowed;}
+  .btn svg{width:18px;height:18px;flex-shrink:0;}
+
+  /* ---------- guard dashboard ---------- */
+  .status-strip{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:16px 18px;
+  }
+  .status-strip .who{
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+  }
+  .status-strip .name{
+    font-family:var(--font-display);
+    font-size:19px;
+    font-weight:600;
+    margin-top:3px;
+  }
+  .progress-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-top:14px;
+  }
+  .progress-track{
+    flex:1;
+    height:6px;
+    background:var(--surface2);
+    border-radius:4px;
+    overflow:hidden;
+  }
+  .progress-fill{
+    height:100%;
+    background:var(--green);
+    border-radius:4px;
+    transition:width .3s ease;
+  }
+  .progress-label{
+    font-family:var(--font-mono);
+    font-size:11.5px;
+    color:var(--muted);
+    white-space:nowrap;
+  }
+
+  .checkpoint-list{display:flex;flex-direction:column;gap:8px;}
+  .cp-row{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:13px 15px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .cp-row.ok{border-color:rgba(52,211,153,0.35); background:rgba(52,211,153,0.05);}
+  .cp-dot{
+    width:9px;height:9px;border-radius:50%;
+    background:var(--line);
+    flex-shrink:0;
+  }
+  .cp-row.ok .cp-dot{background:var(--green); box-shadow:0 0 6px var(--green);}
+  .cp-name{flex:1; font-size:14px; font-weight:500;}
+  .cp-time{font-family:var(--font-mono); font-size:11.5px; color:var(--muted);}
+
+  /* ---------- scan screen ---------- */
+  .scan-wrap{
+    position:relative;
+    width:100%;
+    aspect-ratio:3/4;
+    background:#000;
+    border-radius:16px;
+    overflow:hidden;
+    border:1px solid var(--line);
+  }
+  .scan-wrap video{width:100%;height:100%;object-fit:cover;}
+  .scan-frame{
+    position:absolute; inset:14%;
+    border:2px solid var(--brand);
+    border-radius:18px;
+    box-shadow:0 0 0 999px rgba(0,0,0,0.35);
+  }
+  .scan-frame::before{
+    content:'';
+    position:absolute; left:0; right:0; top:50%;
+    height:2px;
+    background:var(--brand);
+    box-shadow:0 0 10px var(--brand);
+    animation:scanline 2s ease-in-out infinite;
+  }
+  @keyframes scanline{0%,100%{top:8%}50%{top:92%}}
+  .scan-hint{
+    text-align:center;
+    font-family:var(--font-mono);
+    font-size:11.5px;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+  }
+
+  /* ---------- confirm card ---------- */
+  .confirm-card{
+    background:var(--surface);
+    border:1px solid var(--green);
+    border-radius:16px;
+    padding:26px 20px;
+    text-align:center;
+  }
+  .confirm-icon{
+    width:56px;height:56px;border-radius:50%;
+    background:rgba(52,211,153,0.15);
+    color:var(--green);
+    display:flex;align-items:center;justify-content:center;
+    font-size:26px;
+    margin:0 auto 14px;
+  }
+  .confirm-icon svg{width:28px;height:28px;}
+  .confirm-cp{font-family:var(--font-display); font-size:18px; font-weight:600;}
+  .confirm-time{font-family:var(--font-mono); font-size:13px; color:var(--muted); margin-top:4px;}
+
+  /* ---------- panic ---------- */
+  .panic-dock{
+    position:sticky;
+    bottom:0;
+    padding:14px 20px 20px;
+    background:linear-gradient(180deg, transparent, var(--base) 30%);
+    z-index:15;
+  }
+  .panic-btn{
+    width:100%;
+    padding:16px;
+    border-radius:14px;
+    background:var(--panic);
+    color:#fff;
+    border:none;
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:15px;
+    letter-spacing:0.03em;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    cursor:pointer;
+    box-shadow:0 8px 24px rgba(255,149,0,0.30);
+  }
+  .panic-btn:active{transform:scale(0.97);}
+  .panic-btn .pulse{
+    width:9px;height:9px;border-radius:50%;
+    background:#fff;
+    animation:pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.25}}
+
+  .panic-overlay{
+    position:fixed; inset:0;
+    background:rgba(92,29,25,0.97);
+    z-index:100;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    padding:30px;
+    gap:18px;
+  }
+  .panic-overlay .ring{
+    width:110px;height:110px;border-radius:50%;
+    border:3px solid #fff;
+    display:flex;align-items:center;justify-content:center;
+    font-size:44px;
+    animation:ringpulse 1s ease-in-out infinite;
+  }
+  @keyframes ringpulse{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,0.4)}50%{box-shadow:0 0 0 20px rgba(255,255,255,0)}}
+  .panic-overlay h2{font-family:var(--font-display); font-size:22px; margin:0; color:#fff;}
+  .panic-overlay p{color:rgba(255,255,255,0.8); font-size:14px; margin:0; max-width:280px; line-height:1.5;}
+
+  /* ---------- alert banner (incoming panic, admin/other guards) ---------- */
+  .alert-banner{
+    position:fixed; top:0; left:0; right:0;
+    z-index:200;
+    background:var(--panic);
+    color:#fff;
+    padding:14px 20px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    font-family:var(--font-body);
+    box-shadow:0 4px 20px rgba(0,0,0,0.4);
+    animation:slideDown .3s ease;
+  }
+  @keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+  .alert-banner strong{font-family:var(--font-display); display:block; font-size:14px;}
+  .alert-banner span{font-size:12px; opacity:0.9;}
+  .alert-banner button{
+    margin-left:auto;
+    background:rgba(255,255,255,0.2);
+    border:none; color:#fff;
+    padding:8px 12px; border-radius:8px;
+    font-size:11px; font-weight:600;
+    cursor:pointer;
+    flex-shrink:0;
+  }
+
+  /* ---------- admin ---------- */
+  .tabs{
+    display:flex;
+    gap:6px;
+    background:var(--surface2);
+    padding:4px;
+    border-radius:12px;
+    margin-bottom:2px;
+  }
+  .tab{
+    flex:1;
+    text-align:center;
+    padding:9px 4px;
+    border-radius:9px;
+    font-size:12px;
+    font-weight:600;
+    color:var(--muted);
+    cursor:pointer;
+    font-family:var(--font-body);
+  }
+  .tab.active{background:var(--base); color:var(--brand);}
+
+  .kpi-row{display:flex; gap:10px;}
+  .kpi{
+    flex:1;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:14px 12px;
+  }
+  .kpi-num{font-family:var(--font-display); font-size:22px; font-weight:700;}
+  .kpi-label{font-family:var(--font-mono); font-size:9.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-top:2px;}
+
+  .log-entry{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-left:3px solid var(--brand);
+    border-radius:10px;
+    padding:11px 14px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    font-family:var(--font-mono);
+    font-size:12px;
+  }
+  .log-entry.panic{border-left-color:var(--panic);}
+  .log-entry .l-main{color:var(--text); font-family:var(--font-body); font-size:13px; font-weight:500;}
+  .log-entry .l-main svg{width:100%;height:100%;}
+  .log-entry .l-sub{color:var(--muted); font-size:10.5px; margin-top:2px;}
+  .log-entry .l-time{color:var(--muted); white-space:nowrap; font-size:11px;}
+
+  .day-divider{
+    font-family:var(--font-mono);
+    font-size:10px;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    margin:6px 0 -4px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .day-divider::after{content:''; flex:1; height:1px; background:var(--line);}
+
+  .config-block{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:16px 18px;
+  }
+  .config-block h3{font-family:var(--font-display); font-size:14px; margin:0 0 10px;}
+  .chip-list{display:flex; flex-wrap:wrap; gap:7px; margin-bottom:10px;}
+  .chip{
+    background:var(--surface2);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:7px 12px;
+    font-size:12.5px;
+    display:flex; align-items:center; gap:7px;
+  }
+  .chip button{
+    background:none; border:none; color:var(--muted);
+    cursor:pointer; font-size:13px; padding:0; line-height:1;
+  }
+  .add-row{display:flex; gap:8px;}
+  .add-row input{flex:1;}
+  .add-row button{
+    background:var(--brand); color:#1A1200; border:none;
+    border-radius:10px; padding:0 16px; font-weight:700; cursor:pointer;
+  }
+
+  .qr-print-grid{display:flex; flex-direction:column; gap:14px;}
+  .qr-print-card{
+    background:#fff; color:#111;
+    border-radius:14px;
+    padding:18px;
+    text-align:center;
+  }
+  .qr-print-card .qr-box{display:flex; justify-content:center; margin-bottom:10px;}
+  .qr-print-card .qr-label{font-family:var(--font-display); font-weight:700; font-size:15px;}
+  .qr-print-card .qr-code{font-family:var(--font-mono); font-size:10px; color:#888; margin-top:2px;}
+
+  .empty-state{
+    text-align:center;
+    padding:40px 20px;
+    color:var(--muted);
+    font-size:13px;
+  }
+
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:var(--surface2);
+    border:1px solid var(--line);
+    color:var(--text);
+    padding:12px 20px;
+    border-radius:30px;
+    font-size:13px;
+    z-index:150;
+    box-shadow:0 8px 24px rgba(0,0,0,0.4);
+    animation:toastIn .25s ease;
+  }
+  @keyframes toastIn{from{opacity:0; transform:translate(-50%,10px)}to{opacity:1; transform:translate(-50%,0)}}
+
+  @media print{
+    .topbar, .tabs, .panic-dock, .btn, .kpi-row, .exit-role{display:none !important;}
+    body{background:#fff;}
+    .qr-print-card{page-break-inside:avoid; margin-bottom:20px;}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+
+(function(){
+  "use strict";
+
+  /* ============ CONFIG DEFAULTS ============ */
+  var DEFAULT_CONFIG = {
+    guards: ["Guardia 1","Guardia 2","Guardia 3","Guardia 4","Guardia 5","Guardia 6","Guardia 7","Guardia 8"],
+    checkpoints: ["Garita Principal","Punto 2","Punto 3","Punto 4","Punto 5","Garita Salida"]
+  };
+
+  /* ============ FIREBASE ============ */
+  var fbApp = initializeApp(window.FIREBASE_CONFIG);
+  var db = getFirestore(fbApp);
+  var FS_COLLECTION = "control-rondas";
+  function docRef(id){ return doc(db, FS_COLLECTION, id); }
+
+  var STORAGE_CONFIG = "seguridad-config";
+  var STORAGE_RONDAS = "seguridad-rondas";
+  var STORAGE_PANICO = "seguridad-panico";
+  var JEFE_PASSWORD = "1621";
+
+  var ICON_VIEWFINDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/></svg>';
+  var ICON_LOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+  var ICON_WARNING = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+  var ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  var ICON_PRINTER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>';
+
+  var state = {
+    role: null,            // 'guardia' | 'jefe'
+    screen: 'role',
+    guardName: null,
+    config: DEFAULT_CONFIG,
+    rondas: [],
+    panico: [],
+    pendingCheckpoint: null,
+    adminTab: 'bitacora',
+    stream: null,
+    scanning: false,
+    lastPanicSeen: 0,
+    panicReturnScreen: null
+  };
+
+  var app = document.getElementById('app');
+
+  /* ============ STORAGE HELPERS (Firestore) ============ */
+  async function loadAll(){
+    try{
+      var cSnap = await getDoc(docRef(STORAGE_CONFIG));
+      state.config = cSnap.exists() ? cSnap.data() : DEFAULT_CONFIG;
+    }catch(e){ state.config = DEFAULT_CONFIG; }
+    try{
+      var rSnap = await getDoc(docRef(STORAGE_RONDAS));
+      state.rondas = rSnap.exists() ? (rSnap.data().items || []) : [];
+    }catch(e){ state.rondas = []; }
+    try{
+      var pSnap = await getDoc(docRef(STORAGE_PANICO));
+      state.panico = pSnap.exists() ? (pSnap.data().items || []) : [];
+    }catch(e){ state.panico = []; }
+  }
+
+  async function saveConfig(){
+    await setDoc(docRef(STORAGE_CONFIG), state.config);
+  }
+  async function saveRondas(){
+    await setDoc(docRef(STORAGE_RONDAS), { items: state.rondas });
+  }
+  async function savePanico(){
+    await setDoc(docRef(STORAGE_PANICO), { items: state.panico });
+  }
+
+  /* ============ UTIL ============ */
+  function todayKey(d){
+    d = d || new Date();
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  function fmtTime(ts){
+    var d = new Date(ts);
+    return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
+  }
+  function fmtDateLabel(key){
+    var parts = key.split('-');
+    var d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+    var days = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+    return days[d.getDay()] + ' ' + parts[2]+'/'+parts[1];
+  }
+  function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+  function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function showToast(msg){
+    var t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(function(){ t.remove(); }, 2200);
+  }
+
+  function todaysRondas(){
+    var k = todayKey();
+    return state.rondas.filter(function(r){ return todayKey(new Date(r.ts)) === k; });
+  }
+  function guardTodayRondas(name){
+    return todaysRondas().filter(function(r){ return r.guard === name; });
+  }
+  function checkpointDoneToday(name, cp){
+    var list = guardTodayRondas(name).filter(function(r){ return r.checkpoint===cp; });
+    return list.length ? list[list.length-1] : null;
+  }
+
+  /* ============ RENDER ROOT ============ */
+  function render(){
+    app.innerHTML = '';
+    if(state.screen === 'panic-warn') return renderPanicWarn();
+    if(state.screen === 'panic-confirm') return renderPanicConfirm();
+    if(state.screen === 'password') return renderPassword();
+    if(state.screen === 'role') return renderRole();
+    if(state.role === 'guardia') return renderGuardShell();
+    if(state.role === 'jefe') return renderAdminShell();
+  }
+
+  /* ============ ROLE SELECT ============ */
+  function renderRole(){
+    var html = ''+
+    '<div class="topbar">'+
+      '<div class="brand"><div class="brand-mark"><img src="./brand/liderman-badge.png" alt="Liderman" class="brand-badge">LIDERMAN</div>'+
+      '<div class="brand-sub">Control de Rondas</div></div>'+
+    '</div>'+
+    '<div class="screen role-screen">'+
+      '<div class="hero-glyph"><img src="./brand/liderman-badge.png" alt="Liderman" style="width:100%;height:100%;object-fit:contain;"></div>'+
+      '<div class="role-grid">'+
+        '<div class="role-card guardia" id="pick-guardia"><div class="role-icon">'+ICON_VIEWFINDER+'</div>'+
+          '<div><div class="role-title">Guardia en turno</div><div class="role-desc">Marcar rondas por QR</div></div></div>'+
+        '<div class="role-card jefe" id="pick-jefe"><div class="role-icon">'+ICON_LOCK+'</div>'+
+          '<div><div class="role-title">Acceso datos</div><div class="role-desc">Bitácora, exportar y configurar · requiere contraseña</div></div></div>'+
+      '</div>'+
+      '<button class="btn btn-ghost panic-entry-btn" id="panic-entry">'+ICON_WARNING+' Botón de pánico</button>'+
+    '</div>';
+    app.innerHTML = html;
+    document.getElementById('pick-guardia').onclick = function(){ state.role='guardia'; state.screen='select-name'; render(); };
+    document.getElementById('pick-jefe').onclick = function(){ state.screen='password'; render(); };
+    document.getElementById('panic-entry').onclick = function(){ state.panicReturnScreen='role'; state.screen='panic-warn'; render(); };
+  }
+
+  function renderPassword(){
+    app.appendChild(topBar('Acceso datos', true));
+    var scr = document.createElement('div');
+    scr.className = 'screen';
+    scr.innerHTML = ''+
+      '<h1 class="page-title">Ingresa tu contraseña</h1>'+
+      '<p class="page-sub">Solo con la contraseña se puede ver y exportar la bitácora.</p>'+
+      '<div><label class="field-label">Contraseña</label>'+
+      '<input type="password" id="pw-input" inputmode="numeric" maxlength="6" placeholder="••••"></div>'+
+      '<button class="btn btn-primary" id="pw-submit">Ingresar</button>';
+    app.appendChild(scr);
+    var inp = document.getElementById('pw-input');
+    function tryLogin(){
+      if(inp.value === JEFE_PASSWORD){
+        state.role = 'jefe';
+        state.adminTab = 'bitacora';
+        state.screen = null;
+        render();
+      } else {
+        showToast('Contraseña incorrecta');
+        inp.value = '';
+        inp.focus();
+      }
+    }
+    document.getElementById('pw-submit').onclick = tryLogin;
+    inp.onkeydown = function(e){ if(e.key === 'Enter') tryLogin(); };
+    inp.focus();
+  }
+
+  function renderPanicWarn(){
+    var bar = document.createElement('div');
+    bar.className = 'topbar';
+    bar.innerHTML = '<div class="brand"><div class="brand-mark"><img src="./brand/liderman-badge.png" alt="Liderman" class="brand-badge alert-badge">Botón de pánico</div>'+
+      '<div class="brand-sub">Paso 1 de 2</div></div>';
+    app.appendChild(bar);
+    var scr = document.createElement('div');
+    scr.className = 'screen';
+    scr.innerHTML = ''+
+      '<div class="confirm-card" style="border-color:var(--panic);">'+
+        '<div class="confirm-icon" style="background:rgba(255,149,0,0.15);color:var(--panic);">'+ICON_WARNING+'</div>'+
+        '<div class="confirm-cp">Vas a activar una alerta de emergencia</div>'+
+        '<div class="confirm-time">En el siguiente paso deberás confirmarla. Úsala solo en caso real.</div>'+
+      '</div>'+
+      '<button class="btn" style="background:var(--panic);color:#fff;" id="panic-continue">Continuar</button>'+
+      '<button class="btn btn-secondary" id="panic-cancel">Cancelar</button>';
+    app.appendChild(scr);
+    document.getElementById('panic-continue').onclick = function(){ state.screen = 'panic-confirm'; render(); };
+    document.getElementById('panic-cancel').onclick = function(){ state.screen = state.panicReturnScreen || 'role'; render(); };
+  }
+
+  function renderPanicConfirm(){
+    var bar = document.createElement('div');
+    bar.className = 'topbar';
+    bar.innerHTML = '<div class="brand"><div class="brand-mark"><img src="./brand/liderman-badge.png" alt="Liderman" class="brand-badge alert-badge">Confirma la emergencia</div>'+
+      '<div class="brand-sub">Paso 2 de 2</div></div>';
+    app.appendChild(bar);
+    var scr = document.createElement('div');
+    scr.className = 'screen';
+    scr.innerHTML = ''+
+      '<div class="confirm-card" style="border-color:var(--panic);">'+
+        '<div class="confirm-icon" style="background:rgba(255,149,0,0.15);color:var(--panic);">'+ICON_WARNING+'</div>'+
+        '<div class="confirm-cp">Por favor confirma la emergencia</div>'+
+        '<div class="confirm-time">Se avisará de inmediato a quienes tengan la app abierta.</div>'+
+      '</div>'+
+      '<button class="btn" style="background:var(--panic);color:#fff;" id="panic-fire">Confirmar alerta</button>'+
+      '<button class="btn btn-ghost" id="panic-back">Cancelar</button>';
+    app.appendChild(scr);
+    document.getElementById('panic-fire').onclick = function(){
+      var entry = { id: uid(), guard: state.guardName || (state.role === 'jefe' ? 'Acceso datos' : 'Guardia'), ts: Date.now(), ack: false };
+      state.panico.push(entry);
+      savePanico();
+      state.screen = state.panicReturnScreen || 'role';
+      render();
+      showToast('Alerta enviada');
+    };
+    document.getElementById('panic-back').onclick = function(){ state.screen = state.panicReturnScreen || 'role'; render(); };
+  }
+
+  /* ============ GUARD SHELL ============ */
+  function renderGuardShell(){
+    if(state.screen === 'select-name') return renderSelectName();
+    if(state.screen === 'guard-home') return renderGuardHome();
+    if(state.screen === 'scan') return renderScan();
+    if(state.screen === 'confirm') return renderConfirm();
+    state.screen = 'select-name';
+    renderSelectName();
+  }
+
+  function topBar(subtitle, showExit){
+    var bar = document.createElement('div');
+    bar.className = 'topbar';
+    bar.innerHTML = '<div class="brand"><div class="brand-mark"><img src="./brand/liderman-badge.png" alt="Liderman" class="brand-badge">LIDERMAN</div>'+
+      '<div class="brand-sub">Control de Rondas · '+esc(subtitle)+'</div></div>';
+    if(showExit){
+      var btn = document.createElement('div');
+      btn.className = 'exit-role';
+      btn.textContent = 'Salir';
+      btn.onclick = function(){ stopCamera(); state.role=null; state.screen='role'; state.guardName=null; render(); };
+      bar.appendChild(btn);
+    }
+    return bar;
+  }
+
+  function renderSelectName(){
+    app.appendChild(topBar('Selecciona tu nombre', true));
+    var scr = document.createElement('div');
+    scr.className = 'screen';
+    var opts = state.config.guards.map(function(g){ return '<option value="'+esc(g)+'">'+esc(g)+'</option>'; }).join('');
+    scr.innerHTML = ''+
+      '<h1 class="page-title">Inicio de turno</h1>'+
+      '<p class="page-sub">Este celular es de uso compartido. Selecciona tu nombre para que cada ronda quede asociada a ti.</p>'+
+      '<div><label class="field-label">Guardia</label>'+
+      '<select id="guard-select"><option value="">— Selecciona —</option>'+opts+'</select></div>'+
+      '<button class="btn btn-primary" id="continue-btn" disabled>Comenzar turno</button>';
+    app.appendChild(scr);
+    var sel = document.getElementById('guard-select');
+    var btn = document.getElementById('continue-btn');
+    sel.onchange = function(){ btn.disabled = !sel.value; };
+    btn.onclick = function(){
+      state.guardName = sel.value;
+      state.screen = 'guard-home';
+      render();
+    };
+  }
+
+  function renderGuardHome(){
+    app.appendChild(topBar(state.guardName, true));
+    var scr = document.createElement('div');
+    scr.className = 'screen';
+
+    var cps = state.config.checkpoints;
+    var done = cps.filter(function(cp){ return checkpointDoneToday(state.guardName, cp); }).length;
+    var pct = cps.length ? Math.round(done/cps.length*100) : 0;
+
+    var todayK = todayKey();
+
+    var html = ''+
+    '<div class="status-strip">'+
+      '<div class="who">Ronda en curso</div>'+
+      '<div class="name">'+esc(state.guardName)+'</div>'+
+      '<div class="progress-row">'+
+        '<div class="progress-track"><div class="progress-fill" style="width:'+pct+'%"></div></div>'+
+        '<div class="progress-label">'+done+'/'+cps.length+' puntos hoy</div>'+
+      '</div>'+
+    '</div>'+
+    '<button class="btn btn-primary" id="scan-btn">'+ICON_VIEWFINDER+' Escanear punto de ronda</button>'+
+    '<div class="checkpoint-list" id="cp-list"></div>';
+
+    scr.innerHTML = html;
+    app.appendChild(scr);
+
+    var list = scr.querySelector('#cp-list');
+    cps.forEach(function(cp){
+      var last = checkpointDoneToday(state.guardName, cp);
+      var row = document.createElement('div');
+      row.className = 'cp-row' + (last ? ' ok' : '');
+      row.innerHTML = '<div class="cp-dot"></div><div class="cp-name">'+esc(cp)+'</div>'+
+        (last ? '<div class="cp-time">'+fmtTime(last.ts)+'</div>' : '<div class="cp-time">pendiente</div>');
+      list.appendChild(row);
+    });
+
+    document.getElementById('scan-btn').onclick = function(){ state.screen='scan'; render(); };
+
+    appendPanicDock();
+  }
+
+  function renderScan(){
+    app.appendChild(topBar(state.guardName, true));
+    var scr = document.createElement('div');
+    scr.className = 'screen';
+    scr.innerHTML = ''+
+      '<h1 class="page-title">Escanear QR del punto</h1>'+
+      '<div class="scan-wrap"><video id="qr-video" playsinline muted></video><div class="scan-frame"></div></div>'+
+      '<div class="scan-hint" id="scan-hint">Apunta la cámara al código del punto</div>'+
+      '<button class="btn btn-secondary" id="back-home">Cancelar</button>';
+    app.appendChild(scr);
+    document.getElementById('back-home').onclick = function(){ stopCamera(); state.screen='guard-home'; render(); };
+    appendPanicDock();
+    startCamera();
+  }
+
+  var scanCanvas = document.createElement('canvas');
+  function startCamera(){
+    state.scanning = true;
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    .then(function(stream){
+      state.stream = stream;
+      var video = document.getElementById('qr-video');
+      if(!video) { stopCamera(); return; }
+      video.srcObject = stream;
+      video.setAttribute('playsinline', true);
+      video.play();
+      requestAnimationFrame(tick);
+    })
+    .catch(function(err){
+      var hint = document.getElementById('scan-hint');
+      if(hint) hint.textContent = 'No se pudo acceder a la cámara — usa la opción manual';
+    });
+  }
+  function stopCamera(){
+    state.scanning = false;
+    if(state.stream){
+      state.stream.getTracks().forEach(function(t){ t.stop(); });
+      state.stream = null;
+    }
+  }
+  function tick(){
+    if(!state.scanning) return;
+    var video = document.getElementById('qr-video');
+    if(!video || video.readyState !== video.HAVE_ENOUGH_DATA){
+      requestAnimationFrame(tick);
+      return;
+    }
+    scanCanvas.width = video.videoWidth;
+    scanCanvas.height = video.videoHeight;
+    var ctx = scanCanvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
+    var imgData = ctx.getImageData(0,0,scanCanvas.width, scanCanvas.height);
+    var code = window.jsQR ? jsQR(imgData.data, imgData.width, imgData.height) : null;
+    if(code && code.data){
+      var match = state.config.checkpoints.find(function(cp){ return cp.toLowerCase() === code.data.trim().toLowerCase() || ('PUNTO:'+cp).toLowerCase() === code.data.trim().toLowerCase(); });
+      stopCamera();
+      if(match){
+        logRonda(match, 'qr');
+      } else {
+        logRonda(code.data.trim(), 'qr-desconocido');
+      }
+      return;
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function logRonda(checkpoint, method){
+    var entry = { id: uid(), guard: state.guardName, checkpoint: checkpoint, method: method, ts: Date.now() };
+    state.rondas.push(entry);
+    saveRondas();
+    state.pendingCheckpoint = entry;
+    state.screen = 'confirm';
+    render();
+  }
+
+  function renderConfirm(){
+    app.appendChild(topBar(state.guardName, true));
+    var scr = document.createElement('div');
+    scr.className = 'screen';
+    var e = state.pendingCheckpoint;
+    scr.innerHTML = ''+
+      '<div class="confirm-card">'+
+        '<div class="confirm-icon">'+ICON_CHECK+'</div>'+
+        '<div class="confirm-cp">'+esc(e.checkpoint)+'</div>'+
+        '<div class="confirm-time">Registrado a las '+fmtTime(e.ts)+'</div>'+
+      '</div>'+
+      '<button class="btn btn-primary" id="ok-btn">Volver al panel</button>';
+    app.appendChild(scr);
+    document.getElementById('ok-btn').onclick = function(){ state.screen='guard-home'; render(); };
+    appendPanicDock();
+  }
+
+  /* ============ PANIC ============ */
+  function appendPanicDock(){
+    var dock = document.createElement('div');
+    dock.className = 'panic-dock';
+    dock.innerHTML = '<button class="panic-btn" id="panic-btn"><span class="pulse"></span> BOTÓN DE PÁNICO</button>';
+    app.appendChild(dock);
+    document.getElementById('panic-btn').onclick = function(){
+      state.panicReturnScreen = state.screen;
+      stopCamera();
+      state.screen = 'panic-warn';
+      render();
+    };
+  }
+
+  /* ============ ADMIN SHELL ============ */
+  function renderAdminShell(){
+    app.appendChild(topBar('Acceso datos', true));
+    var scr = document.createElement('div');
+    scr.className = 'screen';
+
+    var tabs = document.createElement('div');
+    tabs.className = 'tabs';
+    var tabDefs = [['bitacora','Bitácora'],['config','Guardias/Puntos'],['qr','Imprimir QR'],['exportar','Exportar']];
+    tabDefs.forEach(function(t){
+      var el = document.createElement('div');
+      el.className = 'tab' + (state.adminTab===t[0] ? ' active' : '');
+      el.textContent = t[1];
+      el.onclick = function(){ state.adminTab = t[0]; render(); };
+      tabs.appendChild(el);
+    });
+    scr.appendChild(tabs);
+
+    var content = document.createElement('div');
+    content.style.display='flex'; content.style.flexDirection='column'; content.style.gap='14px';
+    scr.appendChild(content);
+    app.appendChild(scr);
+
+    if(state.adminTab==='bitacora') renderBitacora(content);
+    if(state.adminTab==='config') renderConfigTab(content);
+    if(state.adminTab==='qr') renderQrTab(content);
+    if(state.adminTab==='exportar') renderExportTab(content);
+  }
+
+  function fmtDateTime(ts){
+    var d = new Date(ts);
+    return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+' '+fmtTime(ts);
+  }
+
+  function renderBitacora(content){
+    var today = todaysRondas();
+    var panicToday = state.panico.filter(function(p){ return todayKey(new Date(p.ts))===todayKey(); });
+
+    var kpi = document.createElement('div');
+    kpi.className = 'kpi-row';
+    kpi.innerHTML = ''+
+      '<div class="kpi"><div class="kpi-num">'+today.length+'</div><div class="kpi-label">Rondas hoy</div></div>'+
+      '<div class="kpi"><div class="kpi-num" style="color:'+(panicToday.length?'var(--panic)':'var(--text)')+'">'+panicToday.length+'</div><div class="kpi-label">Alertas hoy</div></div>'+
+      '<div class="kpi"><div class="kpi-num">'+state.config.guards.length+'</div><div class="kpi-label">Guardias</div></div>';
+    content.appendChild(kpi);
+
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:8px;';
+    var addBtn = document.createElement('button');
+    addBtn.className = 'btn btn-secondary';
+    addBtn.style.flex = '1';
+    addBtn.textContent = '+ Ingresar registro manual';
+    addBtn.onclick = function(){ openAdminManualEntry(); };
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = '↻';
+    refreshBtn.title = 'Actualizar con lo último de todos los guardias';
+    refreshBtn.onclick = function(){
+      loadAll().then(function(){ render(); showToast('Bitácora actualizada'); });
+    };
+    btnRow.appendChild(addBtn);
+    btnRow.appendChild(refreshBtn);
+    content.appendChild(btnRow);
+
+    var all = state.rondas.map(function(r){ return {type:'ronda', ts:r.ts, data:r}; })
+      .concat(state.panico.map(function(p){ return {type:'panico', ts:p.ts, data:p}; }));
+
+    if(!all.length){
+      var empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'Todavía no hay registros. Cuando los guardias empiecen a marcar rondas, aparecerán aquí.';
+      content.appendChild(empty);
+      return;
+    }
+
+    all.sort(function(a,b){
+      var g = String(a.data.guard).localeCompare(String(b.data.guard), 'es');
+      if(g !== 0) return g;
+      return a.ts - b.ts;
+    });
+
+    var lastGuard = null;
+    all.forEach(function(item){
+      if(item.data.guard !== lastGuard){
+        lastGuard = item.data.guard;
+        var div = document.createElement('div');
+        div.className = 'day-divider';
+        div.textContent = lastGuard;
+        content.appendChild(div);
+      }
+      var row = document.createElement('div');
+      row.className = 'log-entry' + (item.type==='panico' ? ' panic' : '');
+      if(item.type==='ronda'){
+        row.innerHTML = '<div><div class="l-main">'+esc(item.data.checkpoint)+'</div><div class="l-sub">'+esc(item.data.method)+'</div></div>'+
+          '<div class="l-time">'+fmtDateTime(item.ts)+'</div>';
+      } else {
+        row.innerHTML = '<div><div class="l-main" style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;color:var(--panic);display:inline-flex;">'+ICON_WARNING+'</span>Alerta de pánico</div><div class="l-sub"></div></div>'+
+          '<div class="l-time">'+fmtDateTime(item.ts)+'</div>';
+      }
+      content.appendChild(row);
+    });
+  }
+
+  function openAdminManualEntry(){
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:90;display:flex;align-items:flex-end;';
+    var sheet = document.createElement('div');
+    sheet.style.cssText = 'background:var(--surface);width:100%;border-radius:18px 18px 0 0;padding:20px;max-height:80vh;overflow:auto;display:flex;flex-direction:column;gap:12px;';
+    var guardOpts = state.config.guards.map(function(g){ return '<option value="'+esc(g)+'">'+esc(g)+'</option>'; }).join('');
+    var cpOpts = state.config.checkpoints.map(function(c){ return '<option value="'+esc(c)+'">'+esc(c)+'</option>'; }).join('');
+    sheet.innerHTML = ''+
+      '<div><label class="field-label">Trabajador</label><select id="m-guard">'+guardOpts+'</select></div>'+
+      '<div><label class="field-label">Punto</label><select id="m-cp">'+cpOpts+'</select></div>'+
+      '<div><label class="field-label">Fecha y hora</label><input type="datetime-local" id="m-when"></div>'+
+      '<button class="btn btn-primary" id="m-save">Guardar registro</button>'+
+      '<button class="btn btn-ghost" id="m-cancel">Cancelar</button>';
+    overlay.appendChild(sheet);
+    document.body.appendChild(overlay);
+
+    var whenInput = document.getElementById('m-when');
+    var now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    whenInput.value = now.toISOString().slice(0,16);
+
+    document.getElementById('m-save').onclick = function(){
+      var g = document.getElementById('m-guard').value;
+      var cp = document.getElementById('m-cp').value;
+      var whenVal = whenInput.value;
+      var ts = whenVal ? new Date(whenVal).getTime() : Date.now();
+      state.rondas.push({ id: uid(), guard: g, checkpoint: cp, method: 'manual-admin', ts: ts });
+      saveRondas();
+      overlay.remove();
+      render();
+      showToast('Registro agregado');
+    };
+    document.getElementById('m-cancel').onclick = function(){ overlay.remove(); };
+  }
+
+  function renderConfigTab(content){
+    var guardBlock = document.createElement('div');
+    guardBlock.className = 'config-block';
+    guardBlock.innerHTML = '<h3>Guardias</h3>'+
+      '<div class="chip-list" id="guard-chips"></div>'+
+      '<div class="add-row"><input type="text" id="new-guard" placeholder="Nombre del guardia"><button id="add-guard">Añadir</button></div>';
+    content.appendChild(guardBlock);
+
+    var cpBlock = document.createElement('div');
+    cpBlock.className = 'config-block';
+    cpBlock.innerHTML = '<h3>Puntos de ronda</h3>'+
+      '<div class="chip-list" id="cp-chips"></div>'+
+      '<div class="add-row"><input type="text" id="new-cp" placeholder="Nombre del punto"><button id="add-cp">Añadir</button></div>';
+    content.appendChild(cpBlock);
+
+    function refreshChips(){
+      var gc = document.getElementById('guard-chips');
+      gc.innerHTML = '';
+      state.config.guards.forEach(function(g, i){
+        var chip = document.createElement('div');
+        chip.className = 'chip';
+        chip.innerHTML = '<span>'+esc(g)+'</span><button data-i="'+i+'">✕</button>';
+        chip.querySelector('button').onclick = function(){
+          state.config.guards.splice(i,1); saveConfig(); render();
+        };
+        gc.appendChild(chip);
+      });
+      var cc = document.getElementById('cp-chips');
+      cc.innerHTML = '';
+      state.config.checkpoints.forEach(function(c, i){
+        var chip = document.createElement('div');
+        chip.className = 'chip';
+        chip.innerHTML = '<span>'+esc(c)+'</span><button data-i="'+i+'">✕</button>';
+        chip.querySelector('button').onclick = function(){
+          state.config.checkpoints.splice(i,1); saveConfig(); render();
+        };
+        cc.appendChild(chip);
+      });
+    }
+    refreshChips();
+
+    document.getElementById('add-guard').onclick = function(){
+      var inp = document.getElementById('new-guard');
+      if(inp.value.trim()){ state.config.guards.push(inp.value.trim()); saveConfig(); render(); }
+    };
+    document.getElementById('add-cp').onclick = function(){
+      var inp = document.getElementById('new-cp');
+      if(inp.value.trim()){ state.config.checkpoints.push(inp.value.trim()); saveConfig(); render(); }
+    };
+  }
+
+  function renderQrTab(content){
+    var note = document.createElement('p');
+    note.className = 'page-sub';
+    note.textContent = 'Imprime y pega cada código en su punto físico. Usa el botón de imprimir del navegador para sacarlos en papel.';
+    content.appendChild(note);
+
+    var printBtn = document.createElement('button');
+    printBtn.className = 'btn btn-secondary';
+    printBtn.innerHTML = ICON_PRINTER + ' Imprimir todos los QR';
+    printBtn.onclick = function(){ window.print(); };
+    content.appendChild(printBtn);
+
+    var grid = document.createElement('div');
+    grid.className = 'qr-print-grid';
+    content.appendChild(grid);
+
+    state.config.checkpoints.forEach(function(cp){
+      var card = document.createElement('div');
+      card.className = 'qr-print-card';
+      var qrBoxId = 'qr-'+uid();
+      card.innerHTML = '<div class="qr-box" id="'+qrBoxId+'"></div>'+
+        '<div class="qr-label">'+esc(cp)+'</div>'+
+        '<div class="qr-code">'+esc(cp)+'</div>';
+      grid.appendChild(card);
+      setTimeout(function(){
+        var box = document.getElementById(qrBoxId);
+        if(box && window.QRCode){
+          new QRCode(box, { text: cp, width: 160, height: 160, colorDark:'#111', colorLight:'#fff' });
+        }
+      }, 0);
+    });
+  }
+
+  function renderExportTab(content){
+    var note = document.createElement('p');
+    note.className = 'page-sub';
+    note.textContent = 'Descarga los registros en CSV para pasarlos al computador y armar tu informe semanal.';
+    content.appendChild(note);
+
+    var btn1 = document.createElement('button');
+    btn1.className = 'btn btn-primary';
+    btn1.textContent = '⬇ Descargar rondas (CSV)';
+    btn1.onclick = function(){ downloadCsvRondas(); };
+    content.appendChild(btn1);
+
+    var btn2 = document.createElement('button');
+    btn2.className = 'btn btn-secondary';
+    btn2.textContent = '⬇ Descargar alertas de pánico (CSV)';
+    btn2.onclick = function(){ downloadCsvPanico(); };
+    content.appendChild(btn2);
+
+    var btn3 = document.createElement('button');
+    btn3.className = 'btn btn-ghost';
+    btn3.textContent = 'Borrar todo el historial (irreversible)';
+    btn3.onclick = function(){
+      if(confirm('¿Seguro que quieres borrar todos los registros de rondas y alertas? Esto no se puede deshacer.')){
+        state.rondas = []; state.panico = [];
+        saveRondas(); savePanico(); render();
+        showToast('Historial borrado');
+      }
+    };
+    content.appendChild(btn3);
+  }
+
+  function csvEscape(v){
+    v = String(v==null?'':v);
+    if(/[",\n]/.test(v)) return '"'+v.replace(/"/g,'""')+'"';
+    return v;
+  }
+  function downloadCsv(filename, rows){
+    var csv = rows.map(function(r){ return r.map(csvEscape).join(','); }).join('\n');
+    var blob = new Blob(['\uFEFF'+csv], { type:'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    showToast('Descargado: '+filename);
+  }
+  function downloadCsvRondas(){
+    var rows = [['Fecha','Hora','Guardia','Punto','Método']];
+    state.rondas.slice().sort(function(a,b){return a.ts-b.ts;}).forEach(function(r){
+      var d = new Date(r.ts);
+      rows.push([todayKey(d), fmtTime(r.ts), r.guard, r.checkpoint, r.method]);
+    });
+    downloadCsv('rondas_'+todayKey()+'.csv', rows);
+  }
+  function downloadCsvPanico(){
+    var rows = [['Fecha','Hora','Guardia']];
+    state.panico.slice().sort(function(a,b){return a.ts-b.ts;}).forEach(function(p){
+      var d = new Date(p.ts);
+      rows.push([todayKey(d), fmtTime(p.ts), p.guard]);
+    });
+    downloadCsv('alertas_panico_'+todayKey()+'.csv', rows);
+  }
+
+  /* ============ PANIC LISTENER (real-time via Firestore) ============ */
+  function listenPanic(){
+    onSnapshot(docRef(STORAGE_PANICO), function(snap){
+      if(!snap.exists()) return;
+      var list = snap.data().items || [];
+      var newest = list.length ? list[list.length-1] : null;
+      state.panico = list;
+      if(newest && newest.ts > state.lastPanicSeen){
+        state.lastPanicSeen = newest.ts;
+        var isSelfTrigger = (state.role==='guardia' && newest.guard===state.guardName && Date.now()-newest.ts < 4000);
+        if(!isSelfTrigger){
+          showAlertBanner(newest);
+        }
+      }
+    }, function(){});
+  }
+  function showAlertBanner(entry){
+    var existing = document.querySelector('.alert-banner');
+    if(existing) existing.remove();
+    var banner = document.createElement('div');
+    banner.className = 'alert-banner';
+    banner.innerHTML = '<span style="font-size:22px;">🚨</span>'+
+      '<div><strong>Alerta de pánico</strong><span>'+esc(entry.guard)+' · '+fmtTime(entry.ts)+'</span></div>'+
+      '<button id="ack-alert">OK</button>';
+    document.body.appendChild(banner);
+    try{
+      var ctx = new (window.AudioContext||window.webkitAudioContext)();
+      var o = ctx.createOscillator(); var g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 880; g.gain.value = 0.15;
+      o.start(); setTimeout(function(){ o.stop(); }, 350);
+    }catch(e){}
+    document.getElementById('ack-alert').onclick = function(){ banner.remove(); };
+  }
+
+  /* ============ INIT ============ */
+  loadAll().then(function(){
+    state.lastPanicSeen = state.panico.length ? state.panico[state.panico.length-1].ts : Date.now();
+    render();
+    listenPanic();
+  });
+
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('./service-worker.js').catch(function(){});
+    });
+  }
+
+})();
+</script>
+</body>
+</html>
