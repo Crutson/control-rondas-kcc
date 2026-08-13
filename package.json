@@ -1,0 +1,8 @@
+{
+  "name": "control-rondas-kcc",
+  "private": true,
+  "description": "Función serverless (Vercel) que envía el push del botón de pánico. El sitio en sí es estático y se sirve desde GitHub Pages, no desde este proyecto.",
+  "dependencies": {
+    "firebase-admin": "^12.6.0"
+  }
+}

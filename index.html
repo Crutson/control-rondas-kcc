@@ -588,6 +588,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging.js";
 
 (function(){
   "use strict";
@@ -603,6 +604,56 @@ import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstat
   var db = getFirestore(fbApp);
   var FS_COLLECTION = "control-rondas";
   function docRef(id){ return doc(db, FS_COLLECTION, id); }
+
+  /* ============ PUSH (botón de pánico con app cerrada) ============ */
+  var swRegistration = null;
+  function getPushStatus(){
+    if(!('Notification' in window)) return 'unsupported';
+    return Notification.permission; // 'default' | 'granted' | 'denied'
+  }
+  async function enablePush(silent){
+    try{
+      if(!('Notification' in window) || !swRegistration) return;
+      if(!(await isSupported())) return;
+      var perm = Notification.permission;
+      if(perm === 'default'){
+        if(silent) return;
+        perm = await Notification.requestPermission();
+      }
+      if(perm !== 'granted') return;
+      var messaging = getMessaging(fbApp);
+      var token = await getToken(messaging, {
+        vapidKey: window.FIREBASE_VAPID_KEY,
+        serviceWorkerRegistration: swRegistration
+      });
+      if(!token) return;
+      await setDoc(doc(db, 'push-tokens', token), {
+        role: state.role || 'desconocido',
+        guardName: state.guardName || null,
+        updatedAt: Date.now()
+      });
+      if(!silent) showToast('Avisos de pánico activados');
+    }catch(e){
+      if(!silent) showToast('No se pudo activar avisos push');
+    }
+  }
+
+  // Llama a la función serverless (Vercel) que manda el push real. Se
+  // dispara desde el celular del guardia que aprieta el botón, así que
+  // depende de que ese celular tenga internet en ese instante.
+  function notifyPanicPush(guard){
+    try{
+      if(!window.PANIC_API_URL) return;
+      fetch(window.PANIC_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Panic-Secret': window.PANIC_API_SECRET
+        },
+        body: JSON.stringify({guard: guard})
+      }).catch(function(){});
+    }catch(e){}
+  }
 
   var STORAGE_CONFIG = "seguridad-config";
   var STORAGE_RONDAS = "seguridad-rondas";
@@ -791,7 +842,7 @@ import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstat
       '<div class="confirm-card" style="border-color:var(--panic);">'+
         '<div class="confirm-icon" style="background:rgba(255,149,0,0.15);color:var(--panic);">'+ICON_WARNING+'</div>'+
         '<div class="confirm-cp">Por favor confirma la emergencia</div>'+
-        '<div class="confirm-time">Se avisará de inmediato a quienes tengan la app abierta.</div>'+
+        '<div class="confirm-time">Se avisará de inmediato, incluso a celulares con la app cerrada (si activaron avisos).</div>'+
       '</div>'+
       '<button class="btn" style="background:var(--panic);color:#fff;" id="panic-fire">Confirmar alerta</button>'+
       '<button class="btn btn-ghost" id="panic-back">Cancelar</button>';
@@ -800,6 +851,7 @@ import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstat
       var entry = { id: uid(), guard: state.guardName || (state.role === 'jefe' ? 'Acceso datos' : 'Guardia'), ts: Date.now(), ack: false };
       state.panico.push(entry);
       savePanico();
+      notifyPanicPush(entry.guard);
       state.screen = state.panicReturnScreen || 'role';
       render();
       showToast('Alerta enviada');
@@ -822,6 +874,14 @@ import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstat
     bar.className = 'topbar';
     bar.innerHTML = '<div class="brand"><div class="brand-mark"><img src="./brand/liderman-badge.png" alt="Liderman" class="brand-badge">LIDERMAN</div>'+
       '<div class="brand-sub">Control de Rondas · '+esc(subtitle)+'</div></div>';
+    if(getPushStatus() === 'default'){
+      var bell = document.createElement('div');
+      bell.className = 'exit-role';
+      bell.title = 'Activar avisos de pánico en este celular';
+      bell.textContent = '🔔 Avisos';
+      bell.onclick = function(){ enablePush(false); render(); };
+      bar.appendChild(bell);
+    }
     if(showExit){
       var btn = document.createElement('div');
       btn.className = 'exit-role';
@@ -1330,7 +1390,10 @@ import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstat
 
   if('serviceWorker' in navigator){
     window.addEventListener('load', function(){
-      navigator.serviceWorker.register('./service-worker.js').catch(function(){});
+      navigator.serviceWorker.register('./service-worker.js').then(function(reg){
+        swRegistration = reg;
+        enablePush(true);
+      }).catch(function(){});
     });
   }
 

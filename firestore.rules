@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /control-rondas/{doc} {
+      allow read, write: if true;
+    }
+    match /push-tokens/{token} {
+      allow read, write: if true;
+    }
+    match /panic-events/{event} {
+      allow read, write: if true;
+    }
+  }
+}

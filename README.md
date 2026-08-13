@@ -29,12 +29,10 @@ abriendo el archivo `index.html` directo desde el celular (`file://`).
 
 ## Lo que falta para tenerla instalable de verdad (para Claude Code)
 
-1. **Alojarla en un hosting real y gratuito.** Cualquiera de estos sirve:
-   - GitHub Pages
-   - Vercel
-   - Netlify
-   Solo hay que subir esta carpeta tal cual (son puros archivos estáticos,
-   no requiere backend) y quedará con una URL `https://...`.
+1. **Alojarla en un hosting real y gratuito.** ✅ Hecho — desplegada en
+   GitHub Pages: https://crutson.github.io/control-rondas-kcc/
+   Repo: github.com/Crutson/control-rondas-kcc (rama `main`, deploy automático
+   en cada push).
 
 2. **Reemplazar el almacenamiento.** ✅ Hecho — la app ahora usa Firebase
    Firestore en vez del storage de Claude (ver `index.html`, sección
@@ -45,13 +43,19 @@ abriendo el archivo `index.html` directo desde el celular (`file://`).
      `firebaseConfig` en `firebase-config.js` (son claves públicas, no
      secretas — el navegador las necesita para conectarse).
    - Active Firestore Database (modo producción) y pegue estas reglas en la
-     pestaña "Reglas" (abren solo la colección de esta app, nada más del
+     pestaña "Reglas" (abren solo las colecciones de esta app, nada más del
      proyecto):
      ```
      rules_version = '2';
      service cloud.firestore {
        match /databases/{database}/documents {
          match /control-rondas/{doc} {
+           allow read, write: if true;
+         }
+         match /push-tokens/{token} {
+           allow read, write: if true;
+         }
+         match /panic-events/{event} {
            allow read, write: if true;
          }
        }
@@ -65,17 +69,43 @@ abriendo el archivo `index.html` directo desde el celular (`file://`).
    - Estructura en Firestore: colección `control-rondas` con 3 documentos —
      `seguridad-config` (`{guards, checkpoints}`), `seguridad-rondas`
      (`{items: [...]}`), `seguridad-panico` (`{items: [...]}`). Misma forma
-     de datos que antes, solo cambió el transporte.
-   - El botón de pánico ahora usa `onSnapshot` (tiempo real real, no
-     polling) — llega al instante a todos los celulares con la app abierta.
-     La bitácora del jefe tiene un botón "↻" para traer manualmente lo
-     último de todos los guardias.
+     de datos que antes, solo cambió el transporte. Además: `push-tokens`
+     (un doc por celular suscrito a avisos push).
+   - El botón de pánico usa `onSnapshot` (tiempo real, no polling) para
+     avisar al instante a todos los celulares con la app **abierta**. La
+     bitácora del jefe tiene un botón "↻" para traer manualmente lo último
+     de todos los guardias.
 
-3. **Notificaciones push reales para el botón de pánico**, para que llegue
-   aviso aunque el celular esté con la pantalla apagada. Opciones a evaluar:
-   - Web Push nativo (gratis, requiere configurar el service worker un poco más).
-   - WhatsApp Business API o Twilio, si se quiere que llegue como mensaje/SMS
-     fuera de la app (tiene costo mensual).
+3. **Notificaciones push reales para el botón de pánico.** ✅ Hecho — Web
+   Push nativo vía Firebase Cloud Messaging, disparado por una función
+   serverless en **Vercel** (`api/panic.js`), no por Cloud Functions —
+   así se evita pasar el proyecto Firebase a plan Blaze (pago). El celular
+   del guardia que aprieta el pánico llama directo a esa función, que lee
+   `push-tokens` en Firestore (con credenciales de administrador) y manda
+   el push — llega aunque la app esté cerrada o el celular bloqueado.
+   - **Trade-off de esta arquitectura:** como el disparo depende del
+     celular del guardia (no de un trigger de Firestore en el servidor),
+     si ese celular se queda sin señal justo en el momento del pánico, el
+     push no sale (aunque el registro en la bitácora sí queda guardado
+     apenas recupere señal). Si más adelante se pasa a plan Blaze, conviene
+     migrar a un trigger de Firestore del lado del servidor para que no
+     dependa de la conexión del guardia.
+   - Cada persona debe activar los avisos una vez tocando el botón
+     **"🔔 Avisos"** que aparece en la barra superior (desaparece solo una
+     vez concedido el permiso del navegador).
+   - Requiere una clave **VAPID** (Configuración del proyecto → Cloud
+     Messaging → Web Push certificates → Generate key pair), pegada en
+     `firebase-config.js` (`FIREBASE_VAPID_KEY`), y una clave de **service
+     account** (Configuración del proyecto → Service accounts → Generate
+     new private key) configurada como variables de entorno en Vercel
+     (`FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`)
+     — **nunca** commiteada al repo, es una credencial de administrador real.
+   - `PANIC_API_SECRET` en `firebase-config.js` no es un secreto real (va
+     en el navegador) — solo evita que bots al azar encuentren el endpoint;
+     la seguridad real de los datos la dan las reglas de Firestore.
+   - Deploy: `npx vercel --prod` desde la raíz del proyecto (requiere
+     `vercel login` una vez). La URL que da Vercel va en
+     `firebase-config.js` (`PANIC_API_URL`).
 
 4. **Generar los códigos QR físicos** desde la pestaña "Imprimir QR" del
    panel de Acceso datos, e imprimirlos para pegar en cada punto:
