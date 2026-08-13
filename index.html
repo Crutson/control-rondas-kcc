@@ -1364,21 +1364,49 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
   }
   function showAlertBanner(entry){
     var existing = document.querySelector('.alert-banner');
-    if(existing) existing.remove();
+    if(existing){
+      if(existing._stopAlarm) existing._stopAlarm();
+      existing.remove();
+    }
     var banner = document.createElement('div');
     banner.className = 'alert-banner';
     banner.innerHTML = '<span style="font-size:22px;">🚨</span>'+
       '<div><strong>Alerta de pánico</strong><span>'+esc(entry.guard)+' · '+fmtTime(entry.ts)+'</span></div>'+
-      '<button id="ack-alert">OK</button>';
+      '<button id="ack-alert">OK, detener alarma</button>';
     document.body.appendChild(banner);
-    try{
-      var ctx = new (window.AudioContext||window.webkitAudioContext)();
-      var o = ctx.createOscillator(); var g = ctx.createGain();
-      o.connect(g); g.connect(ctx.destination);
-      o.frequency.value = 880; g.gain.value = 0.15;
-      o.start(); setTimeout(function(){ o.stop(); }, 350);
-    }catch(e){}
-    document.getElementById('ack-alert').onclick = function(){ banner.remove(); };
+
+    var stopped = false;
+    var ctx = null;
+    var beepTimer = null;
+
+    function beep(freq){
+      try{
+        if(!ctx) ctx = new (window.AudioContext||window.webkitAudioContext)();
+        var o = ctx.createOscillator(); var g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = freq;
+        g.gain.value = 0.4;
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+        o.start();
+        setTimeout(function(){ try{ o.stop(); }catch(e){} }, 420);
+      }catch(e){}
+    }
+    function pulse(){
+      if(stopped) return;
+      beep(880);
+      setTimeout(function(){ if(!stopped) beep(660); }, 220);
+      try{ if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(e){}
+    }
+    function stopAlarm(){
+      stopped = true;
+      if(beepTimer) clearInterval(beepTimer);
+      try{ if(navigator.vibrate) navigator.vibrate(0); }catch(e){}
+    }
+    banner._stopAlarm = stopAlarm;
+
+    pulse();
+    beepTimer = setInterval(pulse, 1200);
+    document.getElementById('ack-alert').onclick = function(){ stopAlarm(); banner.remove(); };
   }
 
   /* ============ INIT ============ */
