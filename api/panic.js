@@ -7,8 +7,8 @@ const APP_URL = "https://crutson.github.io/control-rondas-kcc/";
 // sonar/vibrar de nuevo la notificación en el celular (gracias a
 // "renotify" en el service worker), simulando una alarma que insiste
 // aunque la app esté cerrada. Un solo push del sistema no repite solo.
-const BURST_COUNT = 5;
-const BURST_DELAY_MS = 2000;
+const BURST_COUNT = 6;
+const BURST_DELAY_MS = 3000;
 
 module.exports.config = {maxDuration: 30};
 
@@ -69,6 +69,7 @@ module.exports = async (req, res) => {
         body: `${guard} activó el botón de pánico`,
       },
       webpush: {
+        headers: {Urgency: "high"},
         notification: {
           requireInteraction: true,
           renotify: true,
