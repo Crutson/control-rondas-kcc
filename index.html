@@ -679,7 +679,8 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
     scanning: false,
     lastPanicSeen: 0,
     panicReturnScreen: null,
-    roundStartTs: null
+    roundStartTs: null,
+    roundJustCompleted: false
   };
 
   var app = document.getElementById('app');
@@ -928,7 +929,6 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
     var cps = state.config.checkpoints;
     var done = cps.filter(function(cp){ return checkpointDoneInRound(state.guardName, cp); }).length;
     var pct = cps.length ? Math.round(done/cps.length*100) : 0;
-    var allDone = cps.length && done === cps.length;
 
     var html = ''+
     '<div class="status-strip">'+
@@ -940,8 +940,7 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
       '</div>'+
     '</div>'+
     '<button class="btn btn-primary" id="scan-btn">'+ICON_VIEWFINDER+' Escanear punto de ronda</button>'+
-    '<div class="checkpoint-list" id="cp-list"></div>'+
-    (allDone ? '<button class="btn btn-secondary" id="new-round-btn">🔄 Iniciar nueva ronda</button>' : '');
+    '<div class="checkpoint-list" id="cp-list"></div>';
 
     scr.innerHTML = html;
     app.appendChild(scr);
@@ -957,13 +956,6 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
     });
 
     document.getElementById('scan-btn').onclick = function(){ state.screen='scan'; render(); };
-    if(allDone){
-      document.getElementById('new-round-btn').onclick = function(){
-        state.roundStartTs = Date.now();
-        render();
-        showToast('Nueva ronda iniciada — los registros anteriores quedan guardados en la bitácora');
-      };
-    }
 
     appendPanicDock();
   }
@@ -1038,7 +1030,14 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
     var entry = { id: uid(), guard: state.guardName, checkpoint: checkpoint, method: method, ts: Date.now() };
     state.rondas.push(entry);
     saveRondas();
+    var cps = state.config.checkpoints;
+    var roundComplete = cps.length > 0 && cps.every(function(cp){ return checkpointDoneInRound(state.guardName, cp); });
     state.pendingCheckpoint = entry;
+    state.roundJustCompleted = roundComplete;
+    // La ronda recién terminada ya quedó guardada en la bitácora (arriba);
+    // esto solo adelanta el punto de corte para que la próxima ronda del
+    // guardia parta limpia, en cero.
+    if(roundComplete) state.roundStartTs = Date.now();
     state.screen = 'confirm';
     render();
   }
@@ -1048,13 +1047,15 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
     var scr = document.createElement('div');
     scr.className = 'screen';
     var e = state.pendingCheckpoint;
+    var complete = state.roundJustCompleted;
     scr.innerHTML = ''+
-      '<div class="confirm-card">'+
+      '<div class="confirm-card"'+(complete ? ' style="border-color:var(--brand);"' : '')+'>'+
         '<div class="confirm-icon">'+ICON_CHECK+'</div>'+
         '<div class="confirm-cp">'+esc(e.checkpoint)+'</div>'+
         '<div class="confirm-time">Registrado a las '+fmtTime(e.ts)+'</div>'+
+        (complete ? '<div class="confirm-time" style="color:var(--brand);font-weight:700;margin-top:8px;">✅ ¡Ronda completa! Todos los puntos quedaron registrados.</div>' : '')+
       '</div>'+
-      '<button class="btn btn-primary" id="ok-btn">Volver al panel</button>';
+      '<button class="btn btn-primary" id="ok-btn">'+(complete ? 'Empezar nueva ronda' : 'Volver al panel')+'</button>';
     app.appendChild(scr);
     document.getElementById('ok-btn').onclick = function(){ state.screen='guard-home'; render(); };
     appendPanicDock();
