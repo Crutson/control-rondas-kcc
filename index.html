@@ -678,7 +678,8 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
     stream: null,
     scanning: false,
     lastPanicSeen: 0,
-    panicReturnScreen: null
+    panicReturnScreen: null,
+    roundStartTs: null
   };
 
   var app = document.getElementById('app');
@@ -738,11 +739,15 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
     var k = todayKey();
     return state.rondas.filter(function(r){ return todayKey(new Date(r.ts)) === k; });
   }
-  function guardTodayRondas(name){
-    return todaysRondas().filter(function(r){ return r.guard === name; });
-  }
-  function checkpointDoneToday(name, cp){
-    var list = guardTodayRondas(name).filter(function(r){ return r.checkpoint===cp; });
+  // "Hecho" en la pantalla del guardia se refiere solo a la ronda en curso
+  // (desde que eligió su nombre o tocó "Nueva ronda"), no al día completo —
+  // así el checkmark se limpia solo para la siguiente ronda del turno, sin
+  // borrar nada de la bitácora (esos registros quedan para siempre).
+  function checkpointDoneInRound(name, cp){
+    var since = state.roundStartTs || 0;
+    var list = state.rondas.filter(function(r){
+      return r.guard === name && r.checkpoint === cp && r.ts >= since;
+    });
     return list.length ? list[list.length-1] : null;
   }
 
@@ -909,6 +914,7 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
     sel.onchange = function(){ btn.disabled = !sel.value; };
     btn.onclick = function(){
       state.guardName = sel.value;
+      state.roundStartTs = Date.now();
       state.screen = 'guard-home';
       render();
     };
@@ -920,10 +926,9 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
     scr.className = 'screen';
 
     var cps = state.config.checkpoints;
-    var done = cps.filter(function(cp){ return checkpointDoneToday(state.guardName, cp); }).length;
+    var done = cps.filter(function(cp){ return checkpointDoneInRound(state.guardName, cp); }).length;
     var pct = cps.length ? Math.round(done/cps.length*100) : 0;
-
-    var todayK = todayKey();
+    var allDone = cps.length && done === cps.length;
 
     var html = ''+
     '<div class="status-strip">'+
@@ -931,18 +936,19 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
       '<div class="name">'+esc(state.guardName)+'</div>'+
       '<div class="progress-row">'+
         '<div class="progress-track"><div class="progress-fill" style="width:'+pct+'%"></div></div>'+
-        '<div class="progress-label">'+done+'/'+cps.length+' puntos hoy</div>'+
+        '<div class="progress-label">'+done+'/'+cps.length+' puntos esta ronda</div>'+
       '</div>'+
     '</div>'+
     '<button class="btn btn-primary" id="scan-btn">'+ICON_VIEWFINDER+' Escanear punto de ronda</button>'+
-    '<div class="checkpoint-list" id="cp-list"></div>';
+    '<div class="checkpoint-list" id="cp-list"></div>'+
+    (allDone ? '<button class="btn btn-secondary" id="new-round-btn">🔄 Iniciar nueva ronda</button>' : '');
 
     scr.innerHTML = html;
     app.appendChild(scr);
 
     var list = scr.querySelector('#cp-list');
     cps.forEach(function(cp){
-      var last = checkpointDoneToday(state.guardName, cp);
+      var last = checkpointDoneInRound(state.guardName, cp);
       var row = document.createElement('div');
       row.className = 'cp-row' + (last ? ' ok' : '');
       row.innerHTML = '<div class="cp-dot"></div><div class="cp-name">'+esc(cp)+'</div>'+
@@ -951,6 +957,13 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
     });
 
     document.getElementById('scan-btn').onclick = function(){ state.screen='scan'; render(); };
+    if(allDone){
+      document.getElementById('new-round-btn').onclick = function(){
+        state.roundStartTs = Date.now();
+        render();
+        showToast('Nueva ronda iniciada — los registros anteriores quedan guardados en la bitácora');
+      };
+    }
 
     appendPanicDock();
   }
