@@ -3,6 +3,15 @@ const admin = require("firebase-admin");
 const ALLOWED_ORIGIN = "https://crutson.github.io";
 const APP_URL = "https://crutson.github.io/control-rondas-kcc/";
 
+// Cuántas veces se reenvía el push y con qué separación — cada envío hace
+// sonar/vibrar de nuevo la notificación en el celular (gracias a
+// "renotify" en el service worker), simulando una alarma que insiste
+// aunque la app esté cerrada. Un solo push del sistema no repite solo.
+const BURST_COUNT = 5;
+const BURST_DELAY_MS = 2000;
+
+module.exports.config = {maxDuration: 30};
+
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
@@ -11,6 +20,10 @@ if (!admin.apps.length) {
       privateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
     }),
   });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 module.exports = async (req, res) => {
@@ -43,6 +56,8 @@ module.exports = async (req, res) => {
       webpush: {
         notification: {
           requireInteraction: true,
+          renotify: true,
+          tag: "panico",
           icon: `${APP_URL}icons/icon-192.png`,
         },
         fcmOptions: {link: APP_URL},
@@ -50,25 +65,31 @@ module.exports = async (req, res) => {
       tokens,
     };
 
-    const resp = await admin.messaging().sendEachForMulticast(message);
+    const staleTokens = new Set();
+    let lastSuccessCount = 0;
 
-    const staleTokens = [];
-    resp.responses.forEach((r, i) => {
-      if (!r.success) {
-        const code = r.error && r.error.code;
-        if (
-          code === "messaging/registration-token-not-registered" ||
-          code === "messaging/invalid-registration-token"
-        ) {
-          staleTokens.push(tokens[i]);
+    for (let i = 0; i < BURST_COUNT; i++) {
+      if (i > 0) await sleep(BURST_DELAY_MS);
+      const resp = await admin.messaging().sendEachForMulticast(message);
+      lastSuccessCount = resp.successCount;
+      resp.responses.forEach((r, idx) => {
+        if (!r.success) {
+          const code = r.error && r.error.code;
+          if (
+            code === "messaging/registration-token-not-registered" ||
+            code === "messaging/invalid-registration-token"
+          ) {
+            staleTokens.add(tokens[idx]);
+          }
         }
-      }
-    });
+      });
+    }
+
     await Promise.all(
-        staleTokens.map((t) => db.collection("push-tokens").doc(t).delete()),
+        Array.from(staleTokens).map((t) => db.collection("push-tokens").doc(t).delete()),
     );
 
-    res.status(200).json({sent: resp.successCount});
+    res.status(200).json({sent: lastSuccessCount, bursts: BURST_COUNT});
   } catch (err) {
     res.status(500).json({error: err.message});
   }

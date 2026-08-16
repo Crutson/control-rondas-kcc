@@ -1,4 +1,4 @@
-const CACHE_NAME = "control-rondas-v5";
+const CACHE_NAME = "control-rondas-v6";
 
 // Firebase Messaging necesita correr dentro del service worker para poder
 // mostrar la notificación de pánico aunque la app esté cerrada. No puede
@@ -27,6 +27,7 @@ messaging.onBackgroundMessage((payload) => {
     badge: "./icons/icon-192.png",
     tag: "panico",
     requireInteraction: true,
+    renotify: true,
     vibrate: [300, 150, 300, 150, 300]
   });
 });
