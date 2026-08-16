@@ -37,6 +37,21 @@ module.exports = async (req, res) => {
     return res.status(401).json({error: "unauthorized"});
   }
 
+  if (req.method === "GET" && req.query && req.query.debug === "1") {
+    const db = admin.firestore();
+    const snap = await db.collection("push-tokens").get();
+    const now = Date.now();
+    return res.status(200).json({
+      count: snap.size,
+      tokens: snap.docs.map((d) => ({
+        tokenPreview: d.id.slice(0, 12) + "…",
+        role: d.data().role,
+        guardName: d.data().guardName,
+        minutesAgo: Math.round((now - (d.data().updatedAt || 0)) / 60000),
+      })),
+    });
+  }
+
   if (req.method !== "POST") return res.status(405).json({error: "method not allowed"});
 
   const guard = (req.body && req.body.guard) || "Guardia";

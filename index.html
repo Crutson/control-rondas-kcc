@@ -613,28 +613,29 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
   }
   async function enablePush(silent){
     try{
-      if(!('Notification' in window) || !swRegistration) return;
-      if(!(await isSupported())) return;
+      if(!('Notification' in window)){ showToast('Este navegador no soporta notificaciones', 8000); return; }
+      if(!swRegistration){ showToast('Diagnóstico: el service worker todavía no está listo', 8000); return; }
+      if(!(await isSupported())){ showToast('Diagnóstico: Firebase Messaging no es compatible con este navegador', 8000); return; }
       var perm = Notification.permission;
       if(perm === 'default'){
         if(silent) return;
         perm = await Notification.requestPermission();
       }
-      if(perm !== 'granted') return;
+      if(perm !== 'granted'){ showToast('Diagnóstico: permiso de notificaciones = "'+perm+'"', 8000); return; }
       var messaging = getMessaging(fbApp);
       var token = await getToken(messaging, {
         vapidKey: window.FIREBASE_VAPID_KEY,
         serviceWorkerRegistration: swRegistration
       });
-      if(!token) return;
+      if(!token){ showToast('Diagnóstico: getToken() no devolvió nada', 8000); return; }
       await setDoc(doc(db, 'push-tokens', token), {
         role: state.role || 'desconocido',
         guardName: state.guardName || null,
         updatedAt: Date.now()
       });
-      if(!silent) showToast('Avisos de pánico activados');
+      showToast('Avisos de pánico activados ✓');
     }catch(e){
-      if(!silent) showToast('No se pudo activar avisos push');
+      showToast('Diagnóstico: '+(e.code || e.name || 'error')+' — '+e.message, 8000);
     }
   }
 
@@ -728,12 +729,12 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
   }
   function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
   function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
-  function showToast(msg){
+  function showToast(msg, duration){
     var t = document.createElement('div');
     t.className = 'toast';
     t.textContent = msg;
     document.body.appendChild(t);
-    setTimeout(function(){ t.remove(); }, 2200);
+    setTimeout(function(){ t.remove(); }, duration || 2200);
   }
 
   function todaysRondas(){
