@@ -1,4 +1,4 @@
-const CACHE_NAME = "control-rondas-v7";
+const CACHE_NAME = "control-rondas-v8";
 
 // Firebase Messaging necesita correr dentro del service worker para poder
 // mostrar la notificación de pánico aunque la app esté cerrada. No puede
