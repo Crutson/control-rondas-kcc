@@ -393,6 +393,14 @@
     animation:pulse 1.2s ease-in-out infinite;
   }
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.25}}
+  .uv-badge{
+    text-align:center;
+    margin-top:10px;
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:0.03em;
+    color:var(--muted);
+  }
 
   .panic-overlay{
     position:fixed; inset:0;
@@ -772,12 +780,11 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
         '<div class="role-card jefe" id="pick-jefe"><div class="role-icon">'+ICON_LOCK+'</div>'+
           '<div><div class="role-title">Acceso datos</div><div class="role-desc">Bitácora, exportar y configurar · requiere contraseña</div></div></div>'+
       '</div>'+
-      '<div class="panic-dock" style="padding:0;background:none;position:static;"><button class="panic-btn" id="panic-entry"><span class="pulse"></span> BOTÓN DE PÁNICO</button></div>'+
     '</div>';
     app.innerHTML = html;
     document.getElementById('pick-guardia').onclick = function(){ state.role='guardia'; state.screen='select-name'; render(); };
     document.getElementById('pick-jefe').onclick = function(){ state.screen='password'; render(); };
-    document.getElementById('panic-entry').onclick = function(){ state.panicReturnScreen='role'; state.screen='panic-warn'; render(); };
+    appendPanicDock();
   }
 
   function renderPassword(){
@@ -1059,7 +1066,8 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
   function appendPanicDock(){
     var dock = document.createElement('div');
     dock.className = 'panic-dock';
-    dock.innerHTML = '<button class="panic-btn" id="panic-btn"><span class="pulse"></span> BOTÓN DE PÁNICO</button>';
+    dock.innerHTML = '<button class="panic-btn" id="panic-btn"><span class="pulse"></span> BOTÓN DE PÁNICO</button>'+
+      '<div class="uv-badge" id="uv-badge">☀️ Índice UV — cargando…</div>';
     app.appendChild(dock);
     document.getElementById('panic-btn').onclick = function(){
       state.panicReturnScreen = state.screen;
@@ -1067,6 +1075,34 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
       state.screen = 'panic-warn';
       render();
     };
+    renderUvBadge();
+  }
+
+  /* ============ ÍNDICE UV (DMC) ============ */
+  var uvCache = null;
+  function uvCategory(v){
+    if(v < 3) return {label:'Bajo', color:'#4CAF50'};
+    if(v < 6) return {label:'Moderado', color:'#FDD835'};
+    if(v < 8) return {label:'Alto', color:'var(--panic)'};
+    if(v < 11) return {label:'Muy alto', color:'#E53935'};
+    return {label:'Extremo', color:'#8E24AA'};
+  }
+  function fetchUvIndex(){
+    if(uvCache) return Promise.resolve(uvCache);
+    if(!window.UV_API_URL) return Promise.resolve(null);
+    return fetch(window.UV_API_URL)
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){ if(data && data.uvIndex != null) uvCache = data; return data; })
+      .catch(function(){ return null; });
+  }
+  function renderUvBadge(){
+    fetchUvIndex().then(function(data){
+      var el = document.getElementById('uv-badge');
+      if(!el) return;
+      if(!data || data.uvIndex == null){ el.textContent = '☀️ Índice UV no disponible'; return; }
+      var cat = uvCategory(data.uvIndex);
+      el.innerHTML = '☀️ Índice UV hoy: <strong style="color:'+cat.color+'">'+data.uvIndex+' · '+cat.label+'</strong>';
+    });
   }
 
   /* ============ ADMIN SHELL ============ */

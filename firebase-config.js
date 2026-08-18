@@ -33,3 +33,8 @@ window.PANIC_API_URL = "https://control-rondas-five.vercel.app/api/panic";
 // endpoint y lo usen para spamear notificaciones. La seguridad real de
 // los datos la dan las reglas de Firestore, no esto.
 window.PANIC_API_SECRET = "86469fbcd956c62fe16f95c0eb76709e4d5f37abed5133f5";
+
+// Índice UV del día (Dirección Meteorológica de Chile, estación La Serena),
+// vía la misma función serverless en Vercel — sin credenciales acá, el
+// token de la DMC vive solo como variable de entorno en Vercel.
+window.UV_API_URL = "https://control-rondas-five.vercel.app/api/uv";
