@@ -402,6 +402,13 @@
     color:var(--muted);
   }
   .uv-badge strong{font-size:19px;}
+  .uv-tip{
+    margin-top:4px;
+    font-family:var(--font-body);
+    font-size:12.5px;
+    letter-spacing:normal;
+    color:var(--muted);
+  }
 
   .panic-overlay{
     position:fixed; inset:0;
@@ -1082,11 +1089,11 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
   /* ============ ÍNDICE UV (DMC) ============ */
   var uvCache = null;
   function uvCategory(v){
-    if(v < 3) return {label:'Bajo', color:'#4CAF50'};
-    if(v < 6) return {label:'Moderado', color:'#FDD835'};
-    if(v < 8) return {label:'Alto', color:'var(--panic)'};
-    if(v < 11) return {label:'Muy alto', color:'#E53935'};
-    return {label:'Extremo', color:'#8E24AA'};
+    if(v < 3) return {label:'Bajo', color:'#4CAF50', tip:'No requiere protección solar.'};
+    if(v < 6) return {label:'Moderado', color:'#FDD835', tip:'Usa protector solar si vas a estar mucho rato afuera.'};
+    if(v < 8) return {label:'Alto', color:'var(--panic)', tip:'Usa protector solar y busca sombra al mediodía.'};
+    if(v < 11) return {label:'Muy alto', color:'#E53935', tip:'Protección obligatoria: sombra, manga larga y protector solar.'};
+    return {label:'Extremo', color:'#8E24AA', tip:'Evita el sol del mediodía — protección máxima.'};
   }
   function fetchUvIndex(){
     if(uvCache) return Promise.resolve(uvCache);
@@ -1102,7 +1109,8 @@ import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/fir
       if(!el) return;
       if(!data || data.uvIndex == null){ el.textContent = '☀️ Índice UV no disponible'; return; }
       var cat = uvCategory(data.uvIndex);
-      el.innerHTML = '☀️ Índice UV hoy: <strong style="color:'+cat.color+'">'+data.uvIndex+' · '+cat.label+'</strong>';
+      el.innerHTML = '☀️ Índice UV en este momento: <strong style="color:'+cat.color+'">'+data.uvIndex+' · '+cat.label+'</strong>'+
+        '<div class="uv-tip">'+esc(cat.tip)+'</div>';
     });
   }
 
